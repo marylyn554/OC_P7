@@ -1,0 +1,14 @@
+artifact_uri: file:///Volumes/Work/Projets/Linda/OC/OC_P7/notebooks/mlruns/626477466788691253/87b1f80cd45440498d4a42f869426431/artifacts
+end_time: 1763307269590
+entry_point_name: ''
+experiment_id: '626477466788691253'
+lifecycle_stage: active
+run_id: 87b1f80cd45440498d4a42f869426431
+run_name: comparaison_models
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1763307269585
+status: 4
+tags: []
+user_id: frabe
