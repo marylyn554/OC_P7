@@ -1,0 +1,14 @@
+lightgbm
+scikit-learn
+matplotlib
+seaborn
+dill
+hyperopt
+xgboost
+imblearn
+shap
+streamlit
+requests
+evidently
+fastapi
+uvicorn
