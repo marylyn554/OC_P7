@@ -12,3 +12,4 @@ requests
 evidently
 fastapi
 uvicorn
+mlflow

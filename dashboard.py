@@ -16,7 +16,6 @@ st.set_page_config(
 
 st.title("Dashboard – Scoring Crédit Client")
 
-
 # ==========================
 # Helpers pour appeler l'API
 # ==========================
@@ -110,21 +109,27 @@ with col_score:
 
     # Explications (top features) si dispo
     st.markdown("### Principales variables explicatives")
+
     top_features = pred_info.get("top_features", [])
 
     if top_features:
         exp_df = pd.DataFrame(top_features)
-        if "impact" in exp_df.columns:
-            exp_df["impact_direction"] = exp_df["impact"].apply(
-                lambda x: "↑ risque" if x > 0 else "↓ risque"
-            )
-        st.table(exp_df)
-    else:
-        st.write(
-            "Pas encore d'explication détaillée disponible (SHAP, etc.). "
-            "Tu pourras plus tard enrichir l'API pour renvoyer les top features."
+
+        # colonne direction + formatage
+        exp_df["impact_direction"] = exp_df["impact"].apply(
+            lambda x: "↑ augmente le risque" if x > 0 else "↓ diminue le risque"
         )
 
+        # Option : ordonner par importance absolue
+        exp_df["importance_abs"] = exp_df["impact"].abs()
+        exp_df = exp_df.sort_values("importance_abs", ascending=False)
+
+        st.dataframe(
+            exp_df[["feature", "value", "impact", "impact_direction"]],
+            use_container_width=True
+        )
+    else:
+        st.info("Aucune explication SHAP renvoyée par l'API pour ce client.")
 
 # ==========================
 # Bloc 2 : Profil descriptif du client
@@ -195,7 +200,7 @@ else:
 st.markdown("---")
 st.subheader("Surveillance du Data Drift (Evidently)")
 
-report_path = Path("artifacts/data_drift_report.html")
+report_path = Path("notebooks/artifacts/data_drift_report.html")
 
 if report_path.exists():
     html = report_path.read_text(encoding="utf-8")
@@ -204,5 +209,5 @@ else:
     st.info(
         "Rapport Evidently non trouvé. "
         "Génère-le d'abord côté offline (train vs test) et enregistre-le sous "
-        "`artifacts/data_drift_report.html`."
+        "`notebooks/artifacts/data_drift_report.html`."
     )
