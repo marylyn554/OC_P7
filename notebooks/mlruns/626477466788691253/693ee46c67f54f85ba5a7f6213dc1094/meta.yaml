@@ -1,0 +1,14 @@
+artifact_uri: file:///Volumes/Work/Projets/Linda/OC/OC_P7/notebooks/mlruns/626477466788691253/693ee46c67f54f85ba5a7f6213dc1094/artifacts
+end_time: 1763307269579
+entry_point_name: ''
+experiment_id: '626477466788691253'
+lifecycle_stage: active
+run_id: 693ee46c67f54f85ba5a7f6213dc1094
+run_name: logreg_weight_with_threshold_and_shap
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1763307269570
+status: 3
+tags: []
+user_id: frabe

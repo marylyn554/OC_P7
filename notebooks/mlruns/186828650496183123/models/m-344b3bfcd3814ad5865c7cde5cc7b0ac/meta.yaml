@@ -1,0 +1,10 @@
+artifact_location: file:///Volumes/Work/Projets/Linda/OC/OC_P7/notebooks/mlruns/186828650496183123/models/m-344b3bfcd3814ad5865c7cde5cc7b0ac/artifacts
+creation_timestamp: 1763734150247
+experiment_id: '186828650496183123'
+last_updated_timestamp: 1763734181266
+model_id: m-344b3bfcd3814ad5865c7cde5cc7b0ac
+model_type: null
+name: sklearn_model
+source_run_id: abe2fac0542147baa4246c06d0d72762
+status: 2
+status_message: null

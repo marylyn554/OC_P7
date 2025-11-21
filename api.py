@@ -1,0 +1,235 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List, Optional
+import pandas as pd
+import mlflow
+from mlflow.tracking import MlflowClient
+import os
+import numpy as np
+import shap
+
+# =========================
+# Config MLflow / modèle
+# =========================
+mlflow.set_tracking_uri("notebooks/mlruns")
+
+RUN_ID = "abe2fac0542147baa4246c06d0d72762"
+MODEL_URI = f"runs:/{RUN_ID}/sklearn_model"
+
+# Chargement du modèle MLflow
+model = mlflow.sklearn.load_model(MODEL_URI)
+
+# Récupération du seuil métier dans MLflow
+client = MlflowClient()
+run = client.get_run(RUN_ID)
+BEST_T = float(run.data.metrics["val_best_threshold"])
+
+# =========================
+# Chargement des données
+# =========================
+DATA_PATH = "notebooks/data.csv"
+
+if not os.path.exists(DATA_PATH) :
+    raise RuntimeError("Fichiers data.csv introuvable.")
+
+df = pd.read_csv(DATA_PATH)
+df_prod  = df[df['TARGET'].isna()].copy()
+df_train = df[df['TARGET'].notna()].copy()
+
+# On suppose que TRAIN contient TARGET et SK_ID_CURR, et TEST au moins SK_ID_CURR
+# Liste des features utilisées par le modèle (hors ID et cible)
+cols_to_exclude = [c for c in ["SK_ID_CURR", "TARGET","Unnamed: 0"] if c in df_prod.columns]
+FEATURE_COLS = [c for c in df_prod.columns if c not in cols_to_exclude]
+
+# Colonnes numériques pour les comparaisons
+NUMERIC_FEATURES = df_prod[FEATURE_COLS].select_dtypes(include="number").columns.tolist()
+
+# =========================
+# SHAP : construction de l'explainer au démarrage
+# =========================
+
+# On prend un petit échantillon comme background (pour la régression logistique c'est suffisant)
+BACKGROUND_SIZE = 1000
+X_bg = df_prod[FEATURE_COLS].sample(
+    n=min(BACKGROUND_SIZE, len(df_prod)),
+    random_state=42
+)
+
+if hasattr(model, "named_steps"):
+    imp = model.named_steps.get("imp", None)
+    scal = model.named_steps.get("scal", None)
+    clf = model.named_steps.get("clf", model)
+else:
+    imp = None
+    scal = None
+    clf = model
+
+X_bg_proc = X_bg.copy()
+if imp is not None:
+    X_bg_proc = imp.transform(X_bg_proc)
+if scal is not None:
+    X_bg_proc = scal.transform(X_bg_proc)
+
+# Explainer SHAP (LogisticRegression → LinearExplainer convient bien)
+explainer = shap.LinearExplainer(clf, X_bg_proc)
+
+# =========================
+# FastAPI app
+# =========================
+app = FastAPI(title="API Scoring Crédit")
+
+
+# =========================
+# Endpoints
+# =========================
+
+# 1) etat de sante
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+# 2) Liste des clients (pour le select dans le dashboard) -------------------
+@app.get("/clients")
+def get_clients(limit: Optional[int] = 1000):
+    """
+    Retourne une liste de SK_ID_CURR (pour alimenter le select du dashboard).
+    """
+    if "SK_ID_CURR" not in df_prod.columns:
+        raise HTTPException(status_code=500, detail="Colonne SK_ID_CURR absente de df_prod.")
+
+    client_ids = df_prod["SK_ID_CURR"].head(limit).tolist()
+    return {"client_ids": client_ids}
+
+
+# 3) Infos descriptives pour un client donné --------------------------------
+@app.get("/client_info")
+def client_info(client_id: int):
+    """
+    Retourne les infos descriptives d'un client (features brutes).
+    """
+    if "SK_ID_CURR" not in df_prod.columns:
+        raise HTTPException(status_code=500, detail="Colonne SK_ID_CURR absente de df_prod.")
+
+    row = df_prod[df_prod["SK_ID_CURR"] == client_id]
+    if row.empty:
+        raise HTTPException(status_code=404, detail="Client introuvable dans df_prod.")
+
+    row = row.iloc[0]
+
+    # Nettoyage JSON-safe des features
+    features = {col: make_json_safe(row[col]) for col in FEATURE_COLS}
+
+    return {
+        "client_id": int(client_id),
+        "features": features,
+        "numeric_features": NUMERIC_FEATURES
+    }
+
+
+# 4) Prédiction pour un client à partir de son SK_ID_CURR -------------------
+@app.get("/predict_client")
+def predict_client(client_id: int):
+    """
+    Prédit le risque de défaut pour un client à partir de son SK_ID_CURR.
+    Utilisé par le dashboard.
+    """
+    if "SK_ID_CURR" not in df_prod.columns:
+        raise HTTPException(status_code=500, detail="Colonne SK_ID_CURR absente de df_prod.")
+
+    row = df_prod[df_prod["SK_ID_CURR"] == client_id]
+    if row.empty:
+        raise HTTPException(status_code=404, detail="Client introuvable dans df_prod.")
+
+    row = row.iloc[0]
+    X_row = pd.DataFrame([row[FEATURE_COLS].to_dict()])
+
+    proba = model.predict_proba(X_row)[:, 1][0]
+    y_pred = int(proba >= BEST_T)
+
+    # 2) Préparation des données comme vues par le classifieur pour SHAP
+    X_shap = X_row.copy()
+    if imp is not None:
+        X_shap = imp.transform(X_shap)
+    if scal is not None:
+        X_shap = scal.transform(X_shap)
+
+    shap_vals = explainer(X_shap)
+    shap_row = shap_vals.values[0]
+
+    N_TOP = 10
+    abs_contrib = np.abs(shap_row)
+    top_idx = abs_contrib.argsort()[::-1][:N_TOP]
+
+    top_features = []
+    for i in top_idx:
+        fname = FEATURE_COLS[i]
+        top_features.append({
+            "feature": fname,
+            "value": make_json_safe(row[fname]),
+            "impact": float(shap_row[i])  # >0 = augmente le risque, <0 = diminue
+        })
+
+
+    # Ici, on pourrait ajouter une explication (SHAP, etc.)
+    # Pour l'instant, on renvoie juste la proba + decision
+    return {
+        "client_id": int(client_id),
+        "probability_default": proba,
+        "prediction": y_pred,
+        "threshold_used": BEST_T,
+        "top_features": top_features  # à remplir plus tard si tu ajoutes SHAP
+    }
+
+
+# 5) Distribution globale d'une variable pour comparaison -------------------
+@app.get("/global_distribution")
+def global_distribution(feature: str, client_id: int):
+    """
+    Retourne la distribution d'une feature pour :
+    - l'ensemble des clients (train ou test)
+    - un groupe "similaire" (ici, on simplifie : même dataset)
+    - la valeur du client sélectionné
+    """
+    if feature not in df_prod.columns:
+        raise HTTPException(status_code=400, detail=f"Feature {feature} absente de df_prod.")
+
+    # Valeur client
+    row = df_prod[df_prod["SK_ID_CURR"] == client_id]
+    if row.empty:
+        raise HTTPException(status_code=404, detail="Client introuvable.")
+    client_value = row.iloc[0][feature]
+
+    # Distribution globale (on peut prendre train ou test, ici train pour l'historique)
+    all_vals = df_prod[feature].dropna().tolist()
+
+    # Groupe similaire : pour simplifier, on prend test. Tu peux filtrer par critère si tu veux.
+    similar_vals = df_prod[feature].dropna().tolist()
+
+    return {
+        "feature": feature,
+        "client_id": int(client_id),
+        "client_value": float(client_value),
+        "all_clients": all_vals,
+        "similar_clients": similar_vals
+    }
+
+def make_json_safe(value):
+    """Convertit une valeur pandas/numpy en valeur JSON-safe."""
+    # Convertir numpy float → float Python
+    if isinstance(value, (np.floating, float)):
+        # NaN, inf et -inf ne sont pas valides en JSON → remplacés par None
+        if np.isnan(value) or np.isinf(value):
+            return None
+        return float(value)
+
+    # Convertir numpy int → int Python
+    if isinstance(value, (np.integer,)):
+        return int(value)
+
+    # Convertir valeurs pandas Timestamp → string
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+
+    # Sinon, renvoyer la valeur telle quelle
+    return value
