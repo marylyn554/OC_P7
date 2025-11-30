@@ -33,16 +33,14 @@ if not os.path.exists(DATA_PATH) :
     raise RuntimeError("Fichiers data.csv introuvable.")
 
 df = pd.read_csv(DATA_PATH)
-df_prod  = df[df['TARGET'].isna()].copy()
-df_train = df[df['TARGET'].notna()].copy()
-
-# On suppose que TRAIN contient TARGET et SK_ID_CURR, et TEST au moins SK_ID_CURR
+# TRAIN contient TARGET et SK_ID_CURR, et TEST au moins SK_ID_CURR
+df_test = df[df['TARGET'].isna()]
 # Liste des features utilisées par le modèle (hors ID et cible)
-cols_to_exclude = [c for c in ["SK_ID_CURR", "TARGET","Unnamed: 0"] if c in df_prod.columns]
-FEATURE_COLS = [c for c in df_prod.columns if c not in cols_to_exclude]
+cols_to_exclude = [c for c in ["SK_ID_CURR", "TARGET","Unnamed: 0"] if c in df_test.columns]
+FEATURE_COLS = [c for c in df_test.columns if c not in cols_to_exclude]
 
 # Colonnes numériques pour les comparaisons
-NUMERIC_FEATURES = df_prod[FEATURE_COLS].select_dtypes(include="number").columns.tolist()
+NUMERIC_FEATURES = df_test[FEATURE_COLS].select_dtypes(include="number").columns.tolist()
 
 # =========================
 # SHAP : construction de l'explainer au démarrage
@@ -50,8 +48,8 @@ NUMERIC_FEATURES = df_prod[FEATURE_COLS].select_dtypes(include="number").columns
 
 # On prend un petit échantillon comme background (pour la régression logistique c'est suffisant)
 BACKGROUND_SIZE = 1000
-X_bg = df_prod[FEATURE_COLS].sample(
-    n=min(BACKGROUND_SIZE, len(df_prod)),
+X_bg = df_test[FEATURE_COLS].sample(
+    n=min(BACKGROUND_SIZE, len(df_test)),
     random_state=42
 )
 
@@ -95,10 +93,10 @@ def get_clients(limit: Optional[int] = 1000):
     """
     Retourne une liste de SK_ID_CURR (pour alimenter le select du dashboard).
     """
-    if "SK_ID_CURR" not in df_prod.columns:
-        raise HTTPException(status_code=500, detail="Colonne SK_ID_CURR absente de df_prod.")
+    if "SK_ID_CURR" not in df_test.columns:
+        raise HTTPException(status_code=500, detail="Colonne SK_ID_CURR absente de df_test.")
 
-    client_ids = df_prod["SK_ID_CURR"].head(limit).tolist()
+    client_ids = df_test["SK_ID_CURR"].head(limit).tolist()
     return {"client_ids": client_ids}
 
 
@@ -108,12 +106,12 @@ def client_info(client_id: int):
     """
     Retourne les infos descriptives d'un client (features brutes).
     """
-    if "SK_ID_CURR" not in df_prod.columns:
-        raise HTTPException(status_code=500, detail="Colonne SK_ID_CURR absente de df_prod.")
+    if "SK_ID_CURR" not in df_test.columns:
+        raise HTTPException(status_code=500, detail="Colonne SK_ID_CURR absente de df_test.")
 
-    row = df_prod[df_prod["SK_ID_CURR"] == client_id]
+    row = df_test[df_test["SK_ID_CURR"] == client_id]
     if row.empty:
-        raise HTTPException(status_code=404, detail="Client introuvable dans df_prod.")
+        raise HTTPException(status_code=404, detail="Client introuvable dans df_test.")
 
     row = row.iloc[0]
 
@@ -134,12 +132,12 @@ def predict_client(client_id: int):
     Prédit le risque de défaut pour un client à partir de son SK_ID_CURR.
     Utilisé par le dashboard.
     """
-    if "SK_ID_CURR" not in df_prod.columns:
-        raise HTTPException(status_code=500, detail="Colonne SK_ID_CURR absente de df_prod.")
+    if "SK_ID_CURR" not in df_test.columns:
+        raise HTTPException(status_code=500, detail="Colonne SK_ID_CURR absente de df_test.")
 
-    row = df_prod[df_prod["SK_ID_CURR"] == client_id]
+    row = df_test[df_test["SK_ID_CURR"] == client_id]
     if row.empty:
-        raise HTTPException(status_code=404, detail="Client introuvable dans df_prod.")
+        raise HTTPException(status_code=404, detail="Client introuvable dans df_test.")
 
     row = row.iloc[0]
     X_row = pd.DataFrame([row[FEATURE_COLS].to_dict()])
@@ -191,20 +189,20 @@ def global_distribution(feature: str, client_id: int):
     - un groupe "similaire" (ici, on simplifie : même dataset)
     - la valeur du client sélectionné
     """
-    if feature not in df_prod.columns:
-        raise HTTPException(status_code=400, detail=f"Feature {feature} absente de df_prod.")
+    if feature not in df_test.columns:
+        raise HTTPException(status_code=400, detail=f"Feature {feature} absente de df_test.")
 
     # Valeur client
-    row = df_prod[df_prod["SK_ID_CURR"] == client_id]
+    row = df_test[df_test["SK_ID_CURR"] == client_id]
     if row.empty:
         raise HTTPException(status_code=404, detail="Client introuvable.")
     client_value = row.iloc[0][feature]
 
     # Distribution globale (on peut prendre train ou test, ici train pour l'historique)
-    all_vals = df_prod[feature].dropna().tolist()
+    all_vals = df_test[feature].dropna().tolist()
 
     # Groupe similaire : pour simplifier, on prend test. Tu peux filtrer par critère si tu veux.
-    similar_vals = df_prod[feature].dropna().tolist()
+    similar_vals = df_test[feature].dropna().tolist()
 
     return {
         "feature": feature,
