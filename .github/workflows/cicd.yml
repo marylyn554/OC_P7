@@ -45,9 +45,9 @@ jobs:
         run: |
           zip -r api-bundle.zip \
             api.py \
-            Procfile_api \
+            Procfile \
             requirements.txt \
-            -x "notebooks/*" \
+            "notebooks/*" \
             -x "__pycache__/*"
 
       - name: Sauvegarde API
