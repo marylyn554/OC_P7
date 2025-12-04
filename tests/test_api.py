@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
-#from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient
 
 # Le code de l'API sera importé via la fixture 'app' après le mocking
 
@@ -32,7 +32,7 @@ def fake_df_test():
         'feat2': [0.1, 0.5],
     }
     # Important: indexer sur SK_ID_CURR pour que la recherche par ID fonctionne
-    df = pd.DataFrame(data).set_index('SK_ID_CURR')
+    df = pd.DataFrame(data)
     return df
 
 
@@ -57,6 +57,7 @@ def fake_mlflow_module():
     # Simule mlflow.sklearn.load_model(...)
     sklearn.load_model = lambda uri: FakeModel()
     mlflow.sklearn = sklearn
+    mlflow.set_tracking_uri = lambda uri: ()
 
     # 3. mlflow.tracking (pour le seuil BEST_T = 0.5)
     class FakeRunData:
