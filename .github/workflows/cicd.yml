@@ -1,0 +1,71 @@
+name: CI/CD (API FastAPI + Streamlit)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ===================================================================
+  #                BUILD + TEST : API FASTAPI (api.py)
+  # ===================================================================
+  build:
+    name: Build & Test API
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies API
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+          pip install pytest-cov
+
+      - name: Run tests
+        run: |
+          mkdir -p tests_reports
+          pytest -q \
+            --junitxml=tests_reports/junit.xml \
+            --cov-report=term-missing \
+            --cov-report=html:tests_reports/htmlcov
+
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-reports
+          path: tests_reports/
+
+      - name: Package API
+        run: |
+          zip -r api-bundle.zip \
+            api.py \
+            Procfile_api \
+            requirements.txt \
+            -x "notebooks/*" \
+            -x "__pycache__/*"
+
+      - name: Sauvegarde API
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-bundle
+          path: api-bundle.zip
+
+      - name: Package Dashboard
+        run: |
+          zip -r dashboard-bundle.zip \
+            dashboard.py \
+            Procfile_dashboard \
+            requirements.txt \
+            -x "__pycache__/*"
+
+      - name: Upload Dashboard bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-bundle
+          path: dashboard-bundle.zip
