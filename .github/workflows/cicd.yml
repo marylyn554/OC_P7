@@ -47,7 +47,7 @@ jobs:
             api.py \
             Procfile \
             requirements.txt \
-            "notebooks/*" \
+            notebooks \
             -x "__pycache__/*"
 
       - name: Sauvegarde API
@@ -60,7 +60,7 @@ jobs:
         run: |
           zip -r dashboard-bundle.zip \
             dashboard.py \
-            Procfile_dashboard \
+            Procfile \
             requirements.txt \
             -x "__pycache__/*"
 
