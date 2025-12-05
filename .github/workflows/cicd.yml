@@ -99,7 +99,7 @@ jobs:
       - name: Deploy API
         uses: einaregilsson/beanstalk-deploy@v22
         with:
-          aws_region: eu-west-3
+          region: eu-west-3
           application_name: oc-scoring-api
           environment_name: oc-scoring-api-env
           version_label: api-${{ github.run_id }}-${{ github.sha }}
