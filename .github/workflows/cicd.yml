@@ -69,3 +69,32 @@ jobs:
         with:
           name: dashboard-bundle
           path: dashboard-bundle.zip
+
+  # ===================================================================
+  #                       DEPLOY API
+  # ===================================================================
+  deploy_api:
+    name: Deploy API
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: api-bundle
+          path: .
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: eu-west-3
+          role-to-assume: arn:aws:iam::541372247838:role/aws-elasticbeanstalk-service-role
+
+      - name: Deploy API
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_region: eu-west-3
+          application_name: oc-scoring-api
+          environment_name: oc-scoring-api-env
+          version_label: api-${{ github.run_id }}-${{ github.sha }}
+          deployment_package: ./api-bundle.zip
