@@ -78,18 +78,24 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
 
+  # OBLIGATOIRE pour OIDC
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: api-bundle
           path: .
-
+  
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: eu-west-3
-          role-to-assume: arn:aws:iam::541372247838:role/aws-elasticbeanstalk-service-role
-
+          # 👉 Utilise un rôle ASSUMABLE par GitHub (pas le service role EB)
+          role-to-assume: arn:aws:iam::541372247838:role/GitHubActions-EB-Deploy
+  
       - name: Deploy API
         uses: einaregilsson/beanstalk-deploy@v22
         with:
