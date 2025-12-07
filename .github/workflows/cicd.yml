@@ -47,7 +47,7 @@ jobs:
             api.py \
             Procfile \
             wsgi.py \
-            requirements.txt \
+            requirements.txt=requirements-api.txt \
             notebooks \
             -x "__pycache__/*"
 
