@@ -16,7 +16,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
+        with:
+          lfs: true
+      - name: Télécharger le fichier data
+        run: git lfs pull
+        
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
