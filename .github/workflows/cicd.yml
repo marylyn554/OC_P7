@@ -108,4 +108,5 @@ jobs:
           application_name: oc-scoring-api
           environment_name: oc-scoring-api-env
           version_label: api-${{ github.run_id }}-${{ github.sha }}
+          use_existing_version_if_available: true
           deployment_package: ./api-bundle.zip
