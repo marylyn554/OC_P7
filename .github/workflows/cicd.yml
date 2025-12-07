@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies API
         run: |
           python -m pip install -U pip
-          pip install -r requirements.txt
+          pip install -r requirements-all.txt
           pip install pytest-cov
 
       - name: Run tests
@@ -43,11 +43,12 @@ jobs:
 
       - name: Package API
         run: |
+          cp requirements-api.txt requirements.txt
           zip -r api-bundle.zip \
             api.py \
             Procfile \
             wsgi.py \
-            requirements.txt=requirements-api.txt \
+            requirements.txt \
             notebooks \
             -x "__pycache__/*"
 
@@ -59,6 +60,7 @@ jobs:
 
       - name: Package Dashboard
         run: |
+          cp requirements-dashboard.txt requirements.txt
           zip -r dashboard-bundle.zip \
             dashboard.py \
             Procfile \
