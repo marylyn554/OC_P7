@@ -14,15 +14,27 @@ import shap
 mlflow.set_tracking_uri("notebooks/mlruns")
 
 RUN_ID = "abe2fac0542147baa4246c06d0d72762"
-MODEL_URI = f"runs:/{RUN_ID}/sklearn_model"
+MODEL_URI = f"runs:/{RUN_ID}/model"
 
+model = None
+run = None
+BEST_T = None
 # Chargement du modèle MLflow
-model = mlflow.sklearn.load_model(MODEL_URI)
+try:
+    model = mlflow.sklearn.load_model(MODEL_URI)
+    print("Modèle chargé avec succès.")
+except Exception as e:
+    print(f"Erreur lors du chargement du modèle : {e}")
 
 # Récupération du seuil métier dans MLflow
 client = MlflowClient()
-run = client.get_run(RUN_ID)
-BEST_T = float(run.data.metrics["val_best_threshold"])
+try:
+    run = client.get_run(RUN_ID)
+    # Exemple de récupération d'un tag ou d'une métrique
+    BEST_T = float(run.data.metrics["val_best_threshold"])
+    print(f"Seuil métier récupéré : {BEST_T}")
+except Exception as e:
+    print(f"Erreur lors de la récupération du run : {e}")
 
 # =========================
 # Chargement des données
