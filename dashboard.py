@@ -7,7 +7,7 @@ from pathlib import Path
 # ==========================
 # Configuration
 # ==========================
-API_URL = "http://localhost:8000"  # URL de ton API FastAPI
+API_URL = os.getenv("API_URL") 
 
 st.set_page_config(
     page_title="Dashboard scoring crédit",
