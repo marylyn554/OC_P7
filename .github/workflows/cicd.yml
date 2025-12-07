@@ -48,6 +48,7 @@ jobs:
       - name: Package API
         run: |
           cp requirements-api.txt requirements.txt
+          cp Procfile-api Procfile
           zip -r api-bundle.zip \
             api.py \
             Procfile \
@@ -65,6 +66,7 @@ jobs:
       - name: Package Dashboard
         run: |
           cp requirements-dashboard.txt requirements.txt
+          cp Procfile-dashboard Procfile
           zip -r dashboard-bundle.zip \
             dashboard.py \
             Procfile \
