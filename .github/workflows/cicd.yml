@@ -119,3 +119,44 @@ jobs:
           use_existing_version_if_available: true
           wait_for_deployment: true
           deployment_package: ./api-bundle.zip
+
+  # ===================================================================
+  #                       DEPLOY DASHBOARD
+  # ===================================================================
+  deploy_dashboard:
+    name: Deploy Dashboard
+    needs: build
+    runs-on: ubuntu-latest
+
+  # OBLIGATOIRE pour OIDC
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dashboard-bundle
+          path: .
+  
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: eu-west-3
+          # 👉 Utilise un rôle ASSUMABLE par GitHub (pas le service role EB)
+          role-to-assume: arn:aws:iam::541372247838:role/GitHubActions-EB-Deploy
+  
+      - name: Deploy DASHBOARD
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+              # passe explicitement les creds de l'env à l'action
+          aws_access_key: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws_session_token: ${{ env.AWS_SESSION_TOKEN }}
+          region: ${{ env.AWS_REGION }}
+          application_name: oc-scoring-dashboard
+          environment_name: oc-scoring-dashboard-env
+          version_label: api-dashboard-${{ github.run_id }}-${{ github.sha }}
+          use_existing_version_if_available: true
+          wait_for_deployment: true
+          deployment_package: ./dashboard-bundle.zip
