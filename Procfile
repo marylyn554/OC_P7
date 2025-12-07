@@ -1,1 +1,1 @@
-web: gunicorn -k uvicorn.workers.UvicornWorker wsgi:application --bind 127.0.0.1:8000 --workers 1
+web: gunicorn -k uvicorn.workers.UvicornWorker wsgi:application --bind 127.0.0.1:8000 --workers 1 --timeout 60 --graceful-timeout 30
