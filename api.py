@@ -11,38 +11,51 @@ import shap
 # =========================
 # Config MLflow / modèle
 # =========================
-mlflow.set_tracking_uri("notebooks/mlruns")
+# FIX 1: Set the tracking URI to an absolute path for better stability in deployment
+# NOTE: You should ideally use an S3/Postgres/etc. URI in production, not a local folder.
+# We'll use os.getcwd() to make the local path absolute.
+MLFLOW_TRACKING_URI = os.path.join(os.getcwd(), "notebooks", "mlruns")
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+print(f"MLflow Tracking URI set to: {MLFLOW_TRACKING_URI}")
 
 RUN_ID = "abe2fac0542147baa4246c06d0d72762"
 MODEL_URI = f"runs:/{RUN_ID}/model"
 
 model = None
 run = None
-BEST_T = None
+BEST_T = 0.5 # FIX 4: Set a default threshold in case MLflow retrieval fails
+
 # Chargement du modèle MLflow
 try:
     model = mlflow.sklearn.load_model(MODEL_URI)
     print("Modèle chargé avec succès.")
 except Exception as e:
-    print(f"Erreur lors du chargement du modèle : {e}")
+    # FIX 2: Added a robust error message for debugging
+    print(f"Erreur CRITIQUE lors du chargement du modèle à {MODEL_URI} : {e}")
 
 # Récupération du seuil métier dans MLflow
 client = MlflowClient()
 try:
     run = client.get_run(RUN_ID)
-    # Exemple de récupération d'un tag ou d'une métrique
-    BEST_T = float(run.data.metrics["val_best_threshold"])
-    print(f"Seuil métier récupéré : {BEST_T}")
+    # Vérifie si la métrique existe avant de tenter la conversion
+    if "val_best_threshold" in run.data.metrics:
+        BEST_T = float(run.data.metrics["val_best_threshold"])
+        print(f"Seuil métier récupéré : {BEST_T}")
+    else:
+        print(f"AVERTISSEMENT: La métrique 'val_best_threshold' est introuvable. Utilisation du seuil par défaut ({BEST_T}).")
 except Exception as e:
-    print(f"Erreur lors de la récupération du run : {e}")
+    # FIX 3: Catch the MLflow error which likely caused the RunInfo __init__ issue in logs
+    print(f"Erreur lors de la récupération du run {RUN_ID} (RunInfo error probable) : {e}. Utilisation du seuil par défaut ({BEST_T}).")
+
 
 # =========================
 # Chargement des données
 # =========================
-DATA_PATH = "notebooks/data.csv"
+# FIX 5: Use a helper function for path construction (safer cross-OS)
+DATA_PATH = os.path.join("notebooks", "data.csv")
 
 if not os.path.exists(DATA_PATH) :
-    raise RuntimeError("Fichiers data.csv introuvable.")
+    raise RuntimeError(f"Fichiers data.csv introuvable à : {DATA_PATH}")
 
 df = pd.read_csv(DATA_PATH)
 # TRAIN contient TARGET et SK_ID_CURR, et TEST au moins SK_ID_CURR
@@ -81,11 +94,22 @@ if scal is not None:
     X_bg_proc = scal.transform(X_bg_proc)
 
 # Explainer SHAP (LogisticRegression → LinearExplainer convient bien)
-explainer = shap.LinearExplainer(clf, X_bg_proc)
+explainer = None # Initialiser l'explainer à None
+
+# FIX 6: Conditionnaly initialize SHAP only if the model is loaded successfully (clf is not None)
+if clf is not None:
+    try:
+        explainer = shap.LinearExplainer(clf, X_bg_proc)
+        print("SHAP explainer chargé avec succès.")
+    except Exception as e:
+        print(f"Erreur lors de la construction du SHAP explainer : {e}")
+else:
+    print("AVERTISSEMENT: Modèle non chargé. Le SHAP explainer ne sera pas disponible.")
 
 # =========================
 # FastAPI app
 # =========================
+# FIX 7: Add client, imp, scal, and explainer to global scope if they might be used in endpoints
 app = FastAPI(title="API Scoring Crédit")
 
 
@@ -93,10 +117,29 @@ app = FastAPI(title="API Scoring Crédit")
 # Endpoints
 # =========================
 
+# Helper function definition (moved up for scope consistency)
+def make_json_safe(value):
+    """Convertit une valeur pandas/numpy en valeur JSON-safe."""
+    if isinstance(value, (np.floating, float)):
+        if np.isnan(value) or np.isinf(value):
+            return None
+        return float(value)
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
+
 # 1) etat de sante
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    # FIX 8: Extend health check to model/explainer status
+    status = {"status": "ok"}
+    if model is None:
+        status["model_status"] = "failed to load"
+    if explainer is None:
+        status["explainer_status"] = "unavailable"
+    return status
 
 
 # 2) Liste des clients (pour le select dans le dashboard) -------------------
@@ -144,6 +187,9 @@ def predict_client(client_id: int):
     Prédit le risque de défaut pour un client à partir de son SK_ID_CURR.
     Utilisé par le dashboard.
     """
+    if model is None:
+        raise HTTPException(status_code=503, detail="Le modèle ML n'a pas pu être chargé. Prédiction impossible.")
+
     if "SK_ID_CURR" not in df_test.columns:
         raise HTTPException(status_code=500, detail="Colonne SK_ID_CURR absente de df_test.")
 
@@ -154,42 +200,54 @@ def predict_client(client_id: int):
     row = row.iloc[0]
     X_row = pd.DataFrame([row[FEATURE_COLS].to_dict()])
 
+    # NOTE: The model variable is used here, not clf. This is correct if you loaded a Pipeline.
     proba = model.predict_proba(X_row)[:, 1][0]
     y_pred = int(proba >= BEST_T)
 
-    # 2) Préparation des données comme vues par le classifieur pour SHAP
-    X_shap = X_row.copy()
-    if imp is not None:
-        X_shap = imp.transform(X_shap)
-    if scal is not None:
-        X_shap = scal.transform(X_shap)
-
-    shap_vals = explainer(X_shap)
-    shap_row = shap_vals.values[0]
-
-    N_TOP = 10
-    abs_contrib = np.abs(shap_row)
-    top_idx = abs_contrib.argsort()[::-1][:N_TOP]
-
-    top_features = []
-    for i in top_idx:
-        fname = FEATURE_COLS[i]
-        top_features.append({
-            "feature": fname,
-            "value": make_json_safe(row[fname]),
-            "impact": float(shap_row[i])  # >0 = augmente le risque, <0 = diminue
-        })
-
-
-    # Ici, on pourrait ajouter une explication (SHAP, etc.)
-    # Pour l'instant, on renvoie juste la proba + decision
-    return {
+    response = {
         "client_id": int(client_id),
         "probability_default": proba,
         "prediction": y_pred,
         "threshold_used": BEST_T,
-        "top_features": top_features  # à remplir plus tard si tu ajoutes SHAP
+        "top_features": []
     }
+
+    # FIX 9: Only run SHAP logic if the explainer is available
+    if explainer is not None:
+        # 2) Préparation des données comme vues par le classifieur pour SHAP
+        X_shap = X_row.copy()
+        if imp is not None:
+            X_shap = imp.transform(X_shap)
+        if scal is not None:
+            X_shap = scal.transform(X_shap)
+
+        # Assurez-vous que l'explainer a les bonnes méthodes avant d'appeler
+        try:
+            shap_vals = explainer(X_shap)
+            shap_row = shap_vals.values[0]
+
+            N_TOP = 10
+            abs_contrib = np.abs(shap_row)
+            top_idx = abs_contrib.argsort()[::-1][:N_TOP]
+
+            top_features = []
+            for i in top_idx:
+                fname = FEATURE_COLS[i]
+                top_features.append({
+                    "feature": fname,
+                    "value": make_json_safe(row[fname]),
+                    "impact": float(shap_row[i])  # >0 = augmente le risque, <0 = diminue
+                })
+            
+            response["top_features"] = top_features
+        except Exception as e:
+            # Handle SHAP error specifically if it occurs during prediction
+            print(f"Erreur SHAP lors de la prédiction du client {client_id}: {e}")
+            response["shap_error"] = f"Error generating SHAP explanation: {e}"
+    else:
+        response["shap_info"] = "SHAP explanation unavailable due to model/explainer loading failure."
+
+    return response
 
 
 # 5) Distribution globale d'une variable pour comparaison -------------------
@@ -208,38 +266,20 @@ def global_distribution(feature: str, client_id: int):
     row = df_test[df_test["SK_ID_CURR"] == client_id]
     if row.empty:
         raise HTTPException(status_code=404, detail="Client introuvable.")
+    # FIX 10: Ensure client_value is JSON-safe
     client_value = row.iloc[0][feature]
 
     # Distribution globale (on peut prendre train ou test, ici train pour l'historique)
-    all_vals = df_test[feature].dropna().tolist()
+    # FIX 10: Ensure distribution values are JSON-safe
+    all_vals = [make_json_safe(v) for v in df_test[feature].dropna().tolist()]
 
     # Groupe similaire : pour simplifier, on prend test. Tu peux filtrer par critère si tu veux.
-    similar_vals = df_test[feature].dropna().tolist()
+    similar_vals = [make_json_safe(v) for v in df_test[feature].dropna().tolist()]
 
     return {
         "feature": feature,
         "client_id": int(client_id),
-        "client_value": float(client_value),
+        "client_value": make_json_safe(client_value),
         "all_clients": all_vals,
         "similar_clients": similar_vals
     }
-
-def make_json_safe(value):
-    """Convertit une valeur pandas/numpy en valeur JSON-safe."""
-    # Convertir numpy float → float Python
-    if isinstance(value, (np.floating, float)):
-        # NaN, inf et -inf ne sont pas valides en JSON → remplacés par None
-        if np.isnan(value) or np.isinf(value):
-            return None
-        return float(value)
-
-    # Convertir numpy int → int Python
-    if isinstance(value, (np.integer,)):
-        return int(value)
-
-    # Convertir valeurs pandas Timestamp → string
-    if hasattr(value, "isoformat"):
-        return value.isoformat()
-
-    # Sinon, renvoyer la valeur telle quelle
-    return value
