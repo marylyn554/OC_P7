@@ -1,6 +1,6 @@
 fastapi==0.121.2
 uvicorn==0.38.0
-gunicorn==21.2.0
+gunicorn==22.0.0
 numpy==2.3.4
 pandas==2.3.3
 scikit-learn==1.7.2
