@@ -20,7 +20,7 @@ print(f"MLflow Tracking URI set to: {MLFLOW_TRACKING_URI}")
 
 EXPERIMENT_ID = "186828650496183123"
 RUN_ID = "abe2fac0542147baa4246c06d0d72762"
-MODEL_URI = f"runs:/{RUN_ID}/model"
+MODEL_URI = f"runs:/{RUN_ID}/sklearn_model"
 
 model = None
 run = None
