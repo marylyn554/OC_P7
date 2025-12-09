@@ -18,7 +18,8 @@ MLFLOW_TRACKING_URI = os.path.join(os.getcwd(), "notebooks", "mlruns")
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 print(f"MLflow Tracking URI set to: {MLFLOW_TRACKING_URI}")
 
-RUN_ID = "abe2fac0542147baa4246c06d0d72762"
+EXPERIMENT_ID = "186828650496183123"
+RUN_ID = "e2fedff1edd34c0686db8f0c86ae9c49"
 MODEL_URI = f"runs:/{RUN_ID}/model"
 
 model = None
