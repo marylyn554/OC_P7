@@ -52,7 +52,6 @@ jobs:
           zip -r api-bundle.zip \
             api.py \
             Procfile \
-            wsgi.py \
             requirements.txt \
             notebooks \
             -x "__pycache__/*"
