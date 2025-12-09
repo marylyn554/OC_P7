@@ -53,7 +53,8 @@ jobs:
             api.py \
             Procfile \
             requirements.txt \
-            notebooks \
+            notebooks/models \
+            notebooks/data.csv \
             -x "__pycache__/*"
 
       - name: Sauvegarde API
