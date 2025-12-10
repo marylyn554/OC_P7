@@ -203,10 +203,10 @@ st.subheader("Surveillance du Data Drift (Evidently)")
 
 report_path = os.path.join("notebooks", "artifacts", "data_drift_report.html")
 
-if report_path.exists():
+try:
     html = report_path.read_text(encoding="utf-8")
     st.components.v1.html(html, height=800, scrolling=True)
-else:
+except Exception as e:
     st.info(
         "Rapport Evidently non trouvé. "
         "`notebooks/artifacts/data_drift_report.html`."
