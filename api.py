@@ -44,7 +44,7 @@ df = pd.read_csv(DATA_PATH)
 df_test = df[df["TARGET"].isna()]
 
 # Features utilisées
-cols_to_exclude = ["SK_ID_CURR", "TARGET", "Unnamed: 0"]
+cols_to_exclude = ["SK_ID_CURR", "TARGET"]
 FEATURE_COLS = [c for c in df_test.columns if c not in cols_to_exclude]
 
 NUMERIC_FEATURES = df_test[FEATURE_COLS].select_dtypes(include="number").columns.tolist()
