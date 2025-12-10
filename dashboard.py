@@ -201,7 +201,7 @@ else:
 st.markdown("---")
 st.subheader("Surveillance du Data Drift (Evidently)")
 
-report_path = Path("notebooks/artifacts/data_drift_report.html")
+report_path = os.path.join("notebooks", "artifacts", "data_drift_report.html")
 
 if report_path.exists():
     html = report_path.read_text(encoding="utf-8")
