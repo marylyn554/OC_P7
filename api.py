@@ -9,6 +9,7 @@ import numpy as np
 import joblib
 import json
 import os
+import shap
 
 # ===============================================================
 # 1) Chargement du modèle
@@ -48,6 +49,45 @@ cols_to_exclude = ["SK_ID_CURR", "TARGET"]
 FEATURE_COLS = [c for c in df_test.columns if c not in cols_to_exclude]
 
 NUMERIC_FEATURES = df_test[FEATURE_COLS].select_dtypes(include="number").columns.tolist()
+
+# =========================
+# SHAP : construction de l'explainer au démarrage
+# =========================
+
+# On prend un petit échantillon comme background (pour la régression logistique c'est suffisant)
+BACKGROUND_SIZE = 1000
+X_bg = df_test[FEATURE_COLS].sample(
+    n=min(BACKGROUND_SIZE, len(df_test)),
+    random_state=42
+)
+
+if hasattr(model, "named_steps"):
+    imp = model.named_steps.get("imp", None)
+    scal = model.named_steps.get("scal", None)
+    clf = model.named_steps.get("clf", model)
+else:
+    imp = None
+    scal = None
+    clf = model
+
+X_bg_proc = X_bg.copy()
+if imp is not None:
+    X_bg_proc = imp.transform(X_bg_proc)
+if scal is not None:
+    X_bg_proc = scal.transform(X_bg_proc)
+
+# Explainer SHAP (LogisticRegression → LinearExplainer convient bien)
+explainer = None # Initialiser l'explainer à None
+
+# FIX 6: Conditionnaly initialize SHAP only if the model is loaded successfully (clf is not None)
+if clf is not None:
+    try:
+        explainer = shap.LinearExplainer(clf, X_bg_proc)
+        print("SHAP explainer chargé avec succès.")
+    except Exception as e:
+        print(f"Erreur lors de la construction du SHAP explainer : {e}")
+else:
+    print("AVERTISSEMENT: Modèle non chargé. Le SHAP explainer ne sera pas disponible.")
 
 # ===============================================================
 # 4) App FASTAPI
@@ -121,11 +161,33 @@ def predict_client(client_id: int):
     proba = model.predict_proba(X_row)[:, 1][0]
     y_pred = int(proba >= BEST_T)
 
+    X_shap = X_row.copy()
+    if imp is not None:
+        X_shap = imp.transform(X_shap)
+    if scal is not None:
+        X_shap = scal.transform(X_shap)
+
+    shap_vals = explainer(X_shap)
+    shap_row = shap_vals.values[0]
+
+    abs_contrib = np.abs(shap_row)
+    top_idx = abs_contrib.argsort()[::-1][:10]
+
+    top_features = []
+    for i in top_idx:
+        fname = FEATURE_COLS[i]
+        top_features.append({
+            "feature": fname,
+            "value": make_json_safe(row[fname]),
+            "impact": float(shap_row[i])  # >0 = augmente le risque, <0 = diminue
+        })
+
     return {
         "client_id": client_id,
         "probability_default": proba,
         "prediction": y_pred,
         "threshold_used": BEST_T,
+        "top_features": top_features
     }
 
 @app.get("/global_distribution")

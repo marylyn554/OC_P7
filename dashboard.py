@@ -8,7 +8,7 @@ import os
 # ==========================
 # Configuration
 # ==========================
-API_URL = os.getenv("API_URL") 
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 st.set_page_config(
     page_title="Dashboard scoring crédit",
@@ -209,6 +209,5 @@ if report_path.exists():
 else:
     st.info(
         "Rapport Evidently non trouvé. "
-        "Génère-le d'abord côté offline (train vs test) et enregistre-le sous "
         "`notebooks/artifacts/data_drift_report.html`."
     )

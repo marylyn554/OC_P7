@@ -55,6 +55,7 @@ jobs:
             requirements.txt \
             notebooks/models \
             notebooks/data.csv \
+            notebooks/artifacts/data_drift_report.html
             -x "__pycache__/*"
 
       - name: Sauvegarde API
