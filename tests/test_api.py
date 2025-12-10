@@ -1,24 +1,24 @@
-# ===============================================================
-# Tests unitaires pour l'API FastAPI (nouvelle version sans MLflow)
-# ===============================================================
-
+# test_api.py
+# ------------------------------------------------------------
+# Tests unitaires de l'API FastAPI (api.py).
+# Exécuter :  pytest
+# ------------------------------------------------------------
 import sys
+import types
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 
-# ---------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------
+# --- Fixtures pour le Mocking (Isolation des Dépendances) ---
 
 @pytest.fixture(scope="session")
 def fake_df_test():
-    """DataFrame minimal simulant data.csv."""
+    """DataFrame minimal et déterministe pour simuler pd.read_csv()."""
     data = {
         "SK_ID_CURR": [100001, 100002],
         "TARGET": [np.nan, np.nan],
@@ -30,10 +30,9 @@ def fake_df_test():
 
 @pytest.fixture(scope="session")
 def fake_model():
-    """Faux modèle simulant model.pkl."""
+    """Modèle factice : predict_proba retourne p1=0.7 pour tous."""
     class FakeModel:
         def predict_proba(self, X):
-            # Pour tester : p(default) = 0.7 → prédiction = 1 si BEST_T=0.5
             n = len(X)
             p1 = np.full(n, 0.7)
             p0 = 1.0 - p1
@@ -42,19 +41,49 @@ def fake_model():
 
 
 @pytest.fixture(scope="session")
-def app(fake_df_test, fake_model):
+def fake_shap_module():
+    """Module shap factice avec LinearExplainer compatible explainer(X)."""
+    shap = types.ModuleType("shap")
+
+    class FakeShapValues:
+        def __init__(self, n_samples, n_features):
+            # impacts déterministes (feat1 > 0, feat2 < 0)
+            vals = np.zeros((n_samples, n_features), dtype=float)
+            if n_features >= 1:
+                vals[:, 0] = 0.10
+            if n_features >= 2:
+                vals[:, 1] = -0.10
+            self.values = vals
+
+    class FakeExplainer:
+        def __init__(self, model, background):
+            self.expected_value = 0.3
+
+        def __call__(self, X):
+            # X peut être DataFrame, np.array, sparse ; on récupère n,d
+            if hasattr(X, "shape"):
+                n, d = X.shape
+            else:
+                n = len(X)
+                # meilleur effort
+                d = len(X[0]) if n > 0 else 2
+            return FakeShapValues(n, d)
+
+    shap.LinearExplainer = FakeExplainer
+    sys.modules["shap"] = shap
+    return shap
+
+
+@pytest.fixture(scope="session")
+def app(fake_shap_module, fake_df_test, fake_model):
     """
-    Import de api.py avec :
-    - mock de pandas.read_csv
-    - mock de joblib.load
-    - mock des checks d'existence
+    Patch des dépendances AVANT l'import puis import de api.py
+    situé au niveau parent du dossier des tests.
     """
     import importlib.util
 
     tests_dir = Path(__file__).resolve().parent
     api_path = tests_dir.parent / "api.py"
-
-    # Hack sys.path
     parent_dir = str(tests_dir.parent)
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
@@ -63,6 +92,7 @@ def app(fake_df_test, fake_model):
          patch("pandas.read_csv", return_value=fake_df_test), \
          patch("joblib.load", return_value=fake_model):
 
+        assert api_path.exists(), f"api.py introuvable à {api_path}"
         spec = importlib.util.spec_from_file_location("api", str(api_path))
         module = importlib.util.module_from_spec(spec)
         sys.modules["api"] = module
@@ -76,33 +106,38 @@ def client(app):
     return TestClient(app)
 
 
-# ---------------------------------------------------------------
-# Tests des endpoints
-# ---------------------------------------------------------------
+# --- TESTS des Endpoints ---
 
 def test_health(client):
+    """Vérifie le point de terminaison de santé (au moins status=ok)."""
     r = client.get("/health")
     assert r.status_code == 200
-    data = r.json()
-    assert data["status"] == "ok"
-    assert "model_loaded" in data
-    assert "threshold" in data
+    payload = r.json()
+    assert isinstance(payload, dict)
+    assert payload.get("status") == "ok"
+    # Ces champs existent dans ton API actuelle :
+    assert isinstance(payload.get("model_loaded"), bool)
+    assert 0.0 <= float(payload.get("threshold")) <= 1.0
 
 
 def test_get_clients(client):
     r = client.get("/clients", params={"limit": 10})
     assert r.status_code == 200
-    assert r.json()["client_ids"] == [100001, 100002]
+    data = r.json()
+    assert "client_ids" in data
+    assert data["client_ids"] == [100001, 100002]
 
 
 def test_client_info_ok(client):
     r = client.get("/client_info", params={"client_id": 100001})
     assert r.status_code == 200
-    data = r.json()
-    assert data["client_id"] == 100001
-    assert "features" in data
-    assert "feat1" in data["features"]
-    assert "feat2" in data["features"]
+    payload = r.json()
+    assert payload["client_id"] == 100001
+    assert "features" in payload
+    assert all(feat in payload["features"] for feat in ["feat1", "feat2"])
+    # numeric_features exposées
+    assert "numeric_features" in payload
+    assert set(payload["numeric_features"]) == {"feat1", "feat2"}
 
 
 def test_predict_client_ok(client):
@@ -110,42 +145,44 @@ def test_predict_client_ok(client):
     assert r.status_code == 200
     payload = r.json()
 
+    # proba / prédiction OK (BEST_T=~0.522 → pred=1)
     assert payload["client_id"] == 100001
     assert pytest.approx(payload["probability_default"], rel=1e-6) == 0.7
     assert payload["prediction"] == 1
-    assert "threshold_used" in payload
+    assert 0.0 <= float(payload["threshold_used"]) <= 1.0
 
+    # top_features structure OK
+    tops = payload.get("top_features", [])
+    assert isinstance(tops, list)
+    assert len(tops) >= 2
+    assert {"feature", "value", "impact"} <= set(tops[0].keys())
 
 def test_global_distribution_ok(client):
-    r = client.get(
-        "/global_distribution",
-        params={"feature": "feat1", "client_id": 100001}
-    )
+    r = client.get("/global_distribution", params={"feature": "feat1", "client_id": 100001})
     assert r.status_code == 200
     data = r.json()
-
     assert data["feature"] == "feat1"
-    assert data["client_value"] == 1.0
-    assert len(data["all_clients"]) == 2
+    assert data["client_id"] == 100001
+    assert data["client_value"] == 1.0  # valeur de feat1 pour 100001
+    assert isinstance(data["all_clients"], list)
+    assert len(data["all_clients"]) == 2  # 2 lignes dans le df factice
 
 
 @pytest.mark.parametrize(
-    "endpoint, cid",
+    "endpoint, client_id, expected_status, error_text",
     [
-        ("/client_info", 999999),
-        ("/predict_client", 888888),
-    ]
+        ("/client_info", 123456, 404, "Client introuvable"),
+        ("/predict_client", 424242, 404, "Client introuvable"),
+    ],
 )
-def test_client_not_found(client, endpoint, cid):
-    r = client.get(endpoint, params={"client_id": cid})
-    assert r.status_code == 404
-    assert "Client introuvable" in r.text
+def test_client_endpoints_not_found(client, endpoint, client_id, expected_status, error_text):
+    r = client.get(endpoint, params={"client_id": client_id})
+    assert r.status_code == expected_status
+    assert error_text in r.text
 
 
 def test_global_distribution_bad_feature(client):
-    r = client.get(
-        "/global_distribution",
-        params={"feature": "wrong_feature", "client_id": 100001}
-    )
+    r = client.get("/global_distribution", params={"feature": "unknown_col", "client_id": 100001})
     assert r.status_code == 400
+    # Ton API renvoie: "Feature {feature} absente"
     assert "absente" in r.text
