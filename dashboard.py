@@ -201,7 +201,7 @@ else:
 st.markdown("---")
 st.subheader("Surveillance du Data Drift (Evidently)")
 
-report_path = os.path.join("notebooks", "artifacts", "data_drift_report.html")
+report_path = Path('notebooks/artifacts/data_drift_report.html')
 
 try:
     html = report_path.read_text(encoding="utf-8")
@@ -211,3 +211,4 @@ except Exception as e:
         "Rapport Evidently non trouvé. "
         "`notebooks/artifacts/data_drift_report.html`."
     )
+    st.caption(f"Erreur : {e!r}")
