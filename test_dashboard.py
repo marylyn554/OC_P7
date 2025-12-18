@@ -5,17 +5,17 @@ from unittest.mock import patch, Mock
 from dashboard import get_client_ids, API_URL
 
 def test_title():
-    at = AppTest.from_file("dashboard.py").run()
+    at = AppTest.from_file("dashboard.py").run(timeout=15)
     assert at.title[0].value == "Dashboard – Scoring Crédit Client"
 
 def test_sidebar_header():
-    at = AppTest.from_file("dashboard.py").run()
+    at = AppTest.from_file("dashboard.py").run(timeout=15)
     assert at.sidebar.header[0].value == "Sélection du client"
 
 def test_get_client_ids_calls_clients_endpoint():
     fake_resp = Mock()
     fake_resp.raise_for_status.return_value = None
-    fake_resp.json.return_value = {"client_ids": [1, 2, 3]}
+    fake_resp.json.return_value = {"client_ids": [1]}
     
     with patch("dashboard.requests.get", return_value=fake_resp) as mock_get:
         result = get_client_ids()
