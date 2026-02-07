@@ -15,7 +15,7 @@ import shap
 # 1) Chargement du modèle
 # ===============================================================
 
-MODEL_PATH = os.path.join("notebooks", "models", "credit_risk_model.pkl")
+MODEL_PATH = os.path.join("notebooks", "models", "credit_risk_model.joblib")
 
 model = None
 try:
@@ -28,7 +28,7 @@ except Exception as e:
 # 2) Chargement du seuil BEST_T
 # ===============================================================
 
-BEST_T = 0.5218934148703536   # Valeur trouvé par la simulation
+BEST_T = 0.4966037023343275   # Valeur trouvé par la simulation
 
 # ===============================================================
 # 3) Chargement des données (prod clients)
