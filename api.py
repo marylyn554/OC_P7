@@ -34,7 +34,7 @@ BEST_T = 0.4966037023343275   # Valeur trouvé par la simulation
 # 3) Chargement des données (prod clients)
 # ===============================================================
 
-DATA_PATH = os.path.join("notebooks", "data.csv")
+DATA_PATH = os.path.join("notebooks", "data_Prod.csv")
 
 if not os.path.exists(DATA_PATH):
     raise RuntimeError(f"data.csv introuvable à {DATA_PATH}")
@@ -61,33 +61,16 @@ X_bg = df_test[FEATURE_COLS].sample(
     random_state=42
 )
 
-if hasattr(model, "named_steps"):
-    imp = model.named_steps.get("imp", None)
-    scal = model.named_steps.get("scal", None)
-    clf = model.named_steps.get("clf", model)
-else:
-    imp = None
-    scal = None
-    clf = model
-
-X_bg_proc = X_bg.copy()
-if imp is not None:
-    X_bg_proc = imp.transform(X_bg_proc)
-if scal is not None:
-    X_bg_proc = scal.transform(X_bg_proc)
-
-# Explainer SHAP (LogisticRegression → LinearExplainer convient bien)
+# Explainer SHAP (LogisticRegression → LinearExplainer convient bien), Xgboost = TreeExplainer
 explainer = None # Initialiser l'explainer à None
 
 # FIX 6: Conditionnaly initialize SHAP only if the model is loaded successfully (clf is not None)
-if clf is not None:
-    try:
-        explainer = shap.LinearExplainer(clf, X_bg_proc)
-        print("SHAP explainer chargé avec succès.")
-    except Exception as e:
-        print(f"Erreur lors de la construction du SHAP explainer : {e}")
-else:
-    print("AVERTISSEMENT: Modèle non chargé. Le SHAP explainer ne sera pas disponible.")
+
+try:
+    explainer = shap.Explainer(model.predict_proba, X_bg)
+    print("SHAP explainer chargé avec succès.")
+except Exception as e:
+    print(f"Erreur lors de la construction du SHAP explainer : {e}")
 
 # ===============================================================
 # 4) App FASTAPI
@@ -156,19 +139,14 @@ def predict_client(client_id: int):
         raise HTTPException(404, "Client introuvable")
 
     row = row.iloc[0]
-    X_row = pd.DataFrame([row[FEATURE_COLS].to_dict()])
+    X_row = df_test.loc[df_test["SK_ID_CURR"] == client_id, FEATURE_COLS]
 
-    proba = model.predict_proba(X_row)[:, 1][0]
+    proba = float(model.predict_proba(X_row)[:, 1][0])
     y_pred = int(proba >= BEST_T)
 
-    X_shap = X_row.copy()
-    if imp is not None:
-        X_shap = imp.transform(X_shap)
-    if scal is not None:
-        X_shap = scal.transform(X_shap)
-
-    shap_vals = explainer(X_shap)
-    shap_row = shap_vals.values[0]
+    shap_vals = explainer(X_row,  max_evals=1000)   # volontairement bas pour garder les perfs et on ne prend que les 10 features
+ 
+    shap_row = shap_vals.values[0, :, 1]
 
     abs_contrib = np.abs(shap_row)
     top_idx = abs_contrib.argsort()[::-1][:10]
