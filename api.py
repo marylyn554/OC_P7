@@ -61,7 +61,6 @@ X_bg = df_test[FEATURE_COLS].sample(
     random_state=42
 )
 
-# Explainer SHAP (LogisticRegression → LinearExplainer convient bien), Xgboost = TreeExplainer
 explainer = None # Initialiser l'explainer à None
 
 # FIX 6: Conditionnaly initialize SHAP only if the model is loaded successfully (clf is not None)
