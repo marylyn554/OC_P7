@@ -2,3 +2,7 @@
 **/.ipynb_checkpoints/*
 __pycache__/api.cpython-312.pyc
 __pycache__/api.cpython-312.pyc
+# MLflow local runs (artefacts, modèles, metrics…)
+mlruns/
+**/mlruns/
+notebooks/mlruns/
