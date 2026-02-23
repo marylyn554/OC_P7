@@ -28,7 +28,7 @@ except Exception as e:
 # 2) Chargement du seuil BEST_T
 # ===============================================================
 
-BEST_T = 0.4966037023343275   # Valeur trouvé par la simulation
+BEST_T = 0.4897   # Valeur trouvé par la simulation
 
 # ===============================================================
 # 3) Chargement des données (prod clients)
