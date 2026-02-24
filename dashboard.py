@@ -10,6 +10,7 @@ import numpy as np
 # Configuration
 # ==========================
 API_URL = os.getenv("API_URL", "http://localhost:8000")
+DEFAULT_TIMEOUT = 60 
 client_ids=[]
 pred_info=None
 client_info=None
@@ -82,20 +83,20 @@ st.caption(
 # ==========================
 @st.cache_data
 def get_client_ids():
-    resp = requests.get(f"{API_URL}/clients", timeout=30)
+    resp = requests.get(f"{API_URL}/clients", timeout=DEFAULT_TIMEOUT)
     resp.raise_for_status()
     data = resp.json()
     return data["client_ids"]
 
 @st.cache_data
 def get_client_info(client_id: int):
-    resp = requests.get(f"{API_URL}/client_info", params={"client_id": client_id}, timeout=30)
+    resp = requests.get(f"{API_URL}/client_info", params={"client_id": client_id}, timeout=DEFAULT_TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 
 @st.cache_data
 def get_prediction_client(client_id: int):
-    resp = requests.get(f"{API_URL}/predict_client", params={"client_id": client_id}, timeout=30)
+    resp = requests.get(f"{API_URL}/predict_client", params={"client_id": client_id}, timeout=DEFAULT_TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 
@@ -104,7 +105,7 @@ def get_global_distribution(feature: str, client_id: int):
     resp = requests.get(
         f"{API_URL}/global_distribution",
         params={"feature": feature, "client_id": client_id},
-        timeout=30
+        timeout=DEFAULT_TIMEOUT
     )
     resp.raise_for_status()
     return resp.json()
