@@ -21,4 +21,4 @@ def test_get_client_ids_calls_clients_endpoint():
         result = get_client_ids()
 
     # 1️⃣ vérifier l'appel HTTP
-    mock_get.assert_called_once_with(f"{API_URL}/clients",timeout=30)
+    mock_get.assert_called_once_with(f"{API_URL}/clients",timeout=60)
